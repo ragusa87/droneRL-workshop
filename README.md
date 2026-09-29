@@ -5,6 +5,15 @@ Workshop @ [AMLD 2024](https://2024.appliedmldays.org/)
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/MasterScrat/droneRL-workshop)
 
+**Local setup**
+
+Dependencies are managed with [uv](https://docs.astral.sh/uv/):
+
+```bash
+uv sync                       # create the virtual environment
+uv run jupyter notebook       # launch the notebooks
+```
+
 **Slides**
 
 - [01 - What is RL?](https://docs.google.com/presentation/d/1A5HQ7PuARquqfdiFJNFZO28iofQyurCG-Rhfog_1UoU)

@@ -3,10 +3,10 @@ import os
 from collections import defaultdict
 from enum import Enum
 
-import gym.spaces as spaces
+import gymnasium.spaces as spaces
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-from gym import Env
+from gymnasium import Env
 
 assets_path = os.path.dirname(os.path.realpath(__file__))
 font_path = os.path.join(assets_path, "assets", "font", "Inconsolata-Bold.ttf")
@@ -333,6 +333,12 @@ class DeliveryDrones(Env):
         # Return new states, rewards, done and other infos
         info = {'air_respawns': air_respawns, 'ground_respawns': ground_respawns}
         return self._get_grids(), rewards, dones, info
+
+    def seed(self, seed=None):
+        # gymnasium removed Env.seed(); keep it for backward compatibility.
+        # The environment's randomness comes from the global numpy RNG.
+        np.random.seed(seed)
+        return [seed]
 
     def reset(self):
         # Define size of the environment

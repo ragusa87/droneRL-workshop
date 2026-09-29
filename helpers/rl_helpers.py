@@ -170,7 +170,7 @@ def plot_rolling_rewards(rewards_log, window=None, hline=None, events={'delivery
 
 
 def render_video(env, agents, video_path, n_steps=60, fps=1, seed=None):
-    from moviepy.editor import ImageClip, concatenate_videoclips
+    from moviepy import ImageClip, concatenate_videoclips
 
     # Initialization
     if seed is not None:
@@ -195,7 +195,7 @@ def render_video(env, agents, video_path, n_steps=60, fps=1, seed=None):
         frames.append(env.render(mode='rgb_array'))
 
     # Create video
-    clips = [ImageClip(frame).set_duration(fps) for frame in frames]
+    clips = [ImageClip(frame).with_duration(fps) for frame in frames]
     concat_clip = concatenate_videoclips(clips, method="compose")
     concat_clip.write_videofile(video_path, fps=24)
 

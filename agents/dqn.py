@@ -2,7 +2,7 @@ import random
 from collections import defaultdict, Counter
 from collections import deque
 
-import gym.spaces as spaces
+import gymnasium.spaces as spaces
 import matplotlib.pyplot as plt
 import numpy as np
 import torch

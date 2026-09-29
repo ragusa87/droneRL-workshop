@@ -1,9 +1,40 @@
 from collections import OrderedDict
 
-import gym.spaces as spaces
+import gymnasium.spaces as spaces
 import numpy as np
-from gym import ObservationWrapper
 from env.env import Drone, Packet, Dropzone, DeliveryDrones, Skyscraper, Station
+
+
+class ObservationWrapper:
+    """Observation wrapper preserving the classic multi-agent Gym API.
+
+    gymnasium's own ObservationWrapper expects the modern single-agent API
+    (reset -> (obs, info), step -> 5-tuple) and, since v1.0, no longer forwards
+    unknown attributes to the wrapped env. This environment is multi-agent and
+    returns dicts with the classic API (reset -> obs, step -> 4-tuple), so we
+    provide a thin wrapper that keeps that contract and transparently forwards
+    everything else (render, seed, air, ground, shape, ...) to the env.
+    """
+
+    def __init__(self, env):
+        self.env = env
+        self.action_space = env.action_space
+
+    def reset(self, **kwargs):
+        return self.observation(self.env.reset(**kwargs))
+
+    def step(self, action):
+        observation, reward, done, info = self.env.step(action)
+        return self.observation(observation), reward, done, info
+
+    def observation(self, observation):
+        raise NotImplementedError
+
+    def __getattr__(self, name):
+        # Forward anything not defined on the wrapper (render, seed, ...) to the env
+        if name == 'env':
+            raise AttributeError(name)
+        return getattr(self.env, name)
 
 
 class CompassQTable(ObservationWrapper):
