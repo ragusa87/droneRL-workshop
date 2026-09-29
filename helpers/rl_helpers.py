@@ -1,3 +1,4 @@
+import json
 import random
 from collections import defaultdict
 
@@ -169,9 +170,8 @@ def plot_rolling_rewards(rewards_log, window=None, hline=None, events={'delivery
         plt.show()
 
 
-def render_video(env, agents, video_path, n_steps=60, fps=1, seed=None):
-    from moviepy import ImageClip, concatenate_videoclips
-
+def collect_frames(env, agents, n_steps=60, seed=None):
+    """Run a greedy episode and return the list of rgb_array frames."""
     # Initialization
     if seed is not None:
         set_seed(env, seed=seed)
@@ -194,10 +194,135 @@ def render_video(env, agents, video_path, n_steps=60, fps=1, seed=None):
         # Save frame
         frames.append(env.render(mode='rgb_array'))
 
+    return frames
+
+
+def render_video(env, agents, video_path, n_steps=60, fps=1, seed=None):
+    import os
+    try:
+        # moviepy >= 2.0
+        from moviepy import ImageClip, concatenate_videoclips
+    except ImportError:
+        # moviepy 1.x (e.g. the version preinstalled on Colab)
+        from moviepy.editor import ImageClip, concatenate_videoclips
+
+    frames = collect_frames(env, agents, n_steps=n_steps, seed=seed)
+
+    # Create the parent directory if needed
+    directory = os.path.dirname(video_path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+
+    # set_duration was renamed to with_duration in moviepy 2.0
+    def with_duration(clip, duration):
+        setter = getattr(clip, 'with_duration', None) or clip.set_duration
+        return setter(duration)
+
     # Create video
-    clips = [ImageClip(frame).with_duration(fps) for frame in frames]
+    clips = [with_duration(ImageClip(frame), fps) for frame in frames]
     concat_clip = concatenate_videoclips(clips, method="compose")
     concat_clip.write_videofile(video_path, fps=24)
+
+
+def render_html(env, agents, html_path, n_steps=60, fps=1, seed=None):
+    """Export a greedy episode as a self-contained, browser-playable HTML animation.
+
+    Unlike render_video this needs no ffmpeg: each frame is embedded as a base64
+    PNG and played back with a small built-in JavaScript player (play/pause,
+    scrubber, speed). ``fps`` is the playback speed in frames per second.
+    Returns the path written.
+    """
+    import io
+    import os
+    from PIL import Image
+
+    frames = collect_frames(env, agents, n_steps=n_steps, seed=seed)
+
+    # Encode each frame as a base64 PNG data URI
+    data_uris = []
+    for frame in frames:
+        buffer = io.BytesIO()
+        Image.fromarray(np.asarray(frame, dtype=np.uint8)).save(buffer, format='PNG')
+        data_uris.append('data:image/png;base64,' + b64encode(buffer.getvalue()).decode())
+
+    interval_ms = int(round(1000 / fps)) if fps else 200
+    html = (_HTML_TEMPLATE
+            .replace('__FRAMES__', json.dumps(data_uris))
+            .replace('__INTERVAL__', str(interval_ms))
+            .replace('__LAST__', str(max(len(data_uris) - 1, 0))))
+
+    # Create the parent directory if needed, then write the file
+    directory = os.path.dirname(html_path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    with open(html_path, 'w') as f:
+        f.write(html)
+
+    return html_path
+
+
+_HTML_TEMPLATE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DroneRL episode</title>
+<style>
+  body { margin: 0; background: #0b1220; color: #e6edf7;
+         font-family: ui-sans-serif, system-ui, sans-serif; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 24px 16px; }
+  .frame-box { width: 100%; overflow-x: auto; background: #05070d; border-radius: 8px; }
+  img#frame { display: block; width: 100%; height: auto; image-rendering: pixelated; border-radius: 8px; }
+  .controls { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+  button { background: #35e0d0; color: #04121a; border: 0; border-radius: 8px;
+           font: 650 0.9rem inherit; padding: 8px 16px; cursor: pointer; min-width: 84px; }
+  button:hover { filter: brightness(1.08); }
+  .step { color: #8ea0c0; font-size: 0.85rem; min-width: 96px; }
+  .step b { color: #e6edf7; }
+  input[type=range] { flex: 1; min-width: 160px; accent-color: #35e0d0; }
+  select { background: #0c1526; color: #e6edf7; border: 1px solid #22304d;
+           border-radius: 6px; padding: 3px 6px; font: inherit; }
+  label.speed { color: #8ea0c0; font-size: 0.8rem; display: flex; align-items: center; gap: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="frame-box"><img id="frame" alt="environment frame"></div>
+  <div class="controls">
+    <button id="play">Pause</button>
+    <span class="step">step <b id="stepnum">0</b> / __LAST__</span>
+    <input type="range" id="scrub" min="0" max="__LAST__" value="0">
+    <label class="speed">speed
+      <select id="speed">
+        <option value="2">0.5x</option>
+        <option value="1" selected>1x</option>
+        <option value="0.5">2x</option>
+        <option value="0.25">4x</option>
+      </select>
+    </label>
+  </div>
+</div>
+<script>
+  const FRAMES = __FRAMES__;
+  const BASE_INTERVAL = __INTERVAL__;
+  const img = document.getElementById('frame');
+  const scrub = document.getElementById('scrub');
+  const stepnum = document.getElementById('stepnum');
+  const playBtn = document.getElementById('play');
+  const speedSel = document.getElementById('speed');
+  let i = 0, timer = null;
+  function show(idx) { i = idx; img.src = FRAMES[i]; scrub.value = i; stepnum.textContent = i; }
+  function tick() { show((i + 1) % FRAMES.length); }
+  function start() { stop(); timer = setInterval(tick, BASE_INTERVAL * parseFloat(speedSel.value)); playBtn.textContent = 'Pause'; }
+  function stop() { if (timer) clearInterval(timer); timer = null; playBtn.textContent = 'Play'; }
+  playBtn.onclick = () => timer ? stop() : start();
+  scrub.oninput = () => { stop(); show(parseInt(scrub.value, 10)); };
+  speedSel.onchange = () => { if (timer) start(); };
+  if (FRAMES.length) { show(0); start(); }
+</script>
+</body>
+</html>
+"""
 
 
 class ColabVideo():
@@ -211,3 +336,17 @@ class ColabVideo():
               <source src="{}" type="video/mp4">
         </video>
         """.format(self.video_src)
+
+
+class ColabHTML():
+    """Display a render_html() export inline in a notebook via a sandboxed iframe."""
+
+    def __init__(self, path, width=440, height=380):
+        with open(path) as f:
+            self.doc = f.read()
+        self.width, self.height = width, height
+
+    def _repr_html_(self):
+        from html import escape
+        return '<iframe srcdoc="{}" width="{}" height="{}" style="border:0"></iframe>'.format(
+            escape(self.doc, quote=True), self.width, self.height)
